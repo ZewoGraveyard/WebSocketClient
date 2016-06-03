@@ -1,10 +1,9 @@
 #if os(Linux)
 
 import XCTest
-@testable import WebSocketTestSuite
+@testable import WebSocketClientTestSuite
 
 XCTMain([
-  testCase(WebSocketTests.allTests),
-  testCase(FrameTests.allTests),
+  testCase(WebSocketClientTests.allTests),
 ])
 #endif

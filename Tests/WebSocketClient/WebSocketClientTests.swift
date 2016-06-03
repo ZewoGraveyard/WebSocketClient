@@ -1,14 +1,14 @@
 import XCTest
-@testable import WebSocket
+@testable import WebSocketClient
 
-class WebSocketTests: XCTestCase {
+class WebSocketClientTests: XCTestCase {
     func testReality() {
         XCTAssert(2 + 2 == 4, "Something is severely wrong here.")
     }
 }
 
-extension WebSocketTests {
-    static var allTests: [(String, WebSocketTests -> () throws -> Void)] {
+extension WebSocketClientTests {
+    static var allTests: [(String, (WebSocketClientTests) -> () throws -> Void)] {
         return [
            ("testReality", testReality),
         ]

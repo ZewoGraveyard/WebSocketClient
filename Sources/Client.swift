@@ -22,47 +22,73 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-@_exported import HTTPClient
-@_exported import HTTPSClient
-@_exported import Venice
-@_exported import OpenSSL
+@_exported import WebSocket
+
+import HTTP
+import HTTPClient
+import HTTPSClient
+import Base64
 
 public enum ClientError: ErrorProtocol {
-    case wsSchemeRequired
+    case unsupportedScheme
     case hostRequired
+    case responseNotWebsocket
 }
 
 public struct Client {
-    public enum Error: ErrorProtocol {
-        case NoRequest
-        case ResponseNotWebsocket
-    }
-
     private let client: Responder
-    private let onConnect: (Socket) throws -> Void
+    private let didConnect: (WebSocket) throws -> Void
 
-    public init(uri: URI, onConnect: (Socket) throws -> Void) throws {
-      guard let scheme = uri.scheme where scheme == "ws" || scheme == "wss" else {
-          throw ClientError.wsSchemeRequired
-      }
-      guard let host = uri.host else {
-          throw ClientError.hostRequired
-      }
-      let port = uri.port ?? (scheme == "wss" ? 443 : 80)
-      try self.init(ssl:scheme == "wss", host: host, port: port, onConnect: onConnect)
-    }
+    public init(uri: URI, didConnect: (WebSocket) throws -> Void) throws {
+        guard let scheme = uri.scheme where scheme == "ws" || scheme == "wss" else {
+            throw ClientError.unsupportedScheme
+        }
 
-    public init(ssl: Bool, host: String, port: Int, onConnect: (Socket) throws -> Void) throws {
-        let uri = URI(host: host, port: port, scheme: ssl ? "https" : "http")
-        if ssl {
+        guard let host = uri.host else {
+            throw ClientError.hostRequired
+        }
+
+        let secure = scheme == "wss"
+        let port = uri.port ?? (secure ? 443 : 80)
+        let uri = URI(host: host, port: port, scheme: secure ? "https" : "http")
+
+        if secure {
             self.client = try HTTPSClient.Client(uri: uri)
         } else {
             self.client = try HTTPClient.Client(uri: uri)
         }
-        self.onConnect =  onConnect
+
+        self.didConnect = didConnect
     }
 
-    public func connectInBackground(path: String, failure: (ErrorProtocol) -> Void = Client.logError) {
+    public func connect(_ path: String) throws {
+        let key = try Base64.encode(Random.getBytes(16))
+
+        let headers: Headers = [
+            "Connection": "Upgrade",
+            "Upgrade": "websocket",
+            "Sec-WebSocket-Version": "13",
+            "Sec-WebSocket-Key": [key],
+        ]
+
+        let request = try Request(method: .get, uri: path, headers: headers) { response, stream in
+            guard response.status == .switchingProtocols && response.isWebSocket else {
+                throw ClientError.responseNotWebsocket
+            }
+
+            guard let accept = response.webSocketAccept where accept == WebSocket.accept(key) else {
+                throw ClientError.responseNotWebsocket
+            }
+
+            let webSocket = WebSocket(stream: stream, mode: .client)
+            try self.didConnect(webSocket)
+            try webSocket.start()
+        }
+
+        try client.respond(to: request)
+    }
+
+    public func connectInBackground(_ path: String, failure: (ErrorProtocol) -> Void = Client.logError) {
         co {
             do {
                 try self.connect(path)
@@ -75,38 +101,22 @@ public struct Client {
     static func logError(error: ErrorProtocol) {
         print(error)
     }
+}
 
-    public func connect(_ path: String) throws {
-        let key = try Base64.encode(Random.getBytes(16))
-
-        let headers: Headers = [
-            "Connection": "Upgrade",
-            "Upgrade": "websocket",
-            "Sec-WebSocket-Version": "13",
-            "Sec-WebSocket-Key": [key],
-            ]
-
-        var _request: Request?
-        let request = try Request(method: .get, uri: path, headers: headers) { response, stream in
-            guard let request = _request else {
-                throw Error.NoRequest
-            }
-
-            guard response.status == .switchingProtocols && response.isWebSocket else {
-                throw Error.ResponseNotWebsocket
-            }
-
-            guard let accept = response.webSocketAccept where accept == Socket.accept(key) else {
-                throw Error.ResponseNotWebsocket
-            }
-
-            let webSocket = Socket(stream: stream, mode: .Client, request: request, response: response)
-            try self.onConnect(webSocket)
-            try webSocket.loop()
-        }
-        _request = request
-
-        try client.respond(to: request)
+public extension Response {
+    public var webSocketVersion: String? {
+        return headers["Sec-Websocket-Version"].first
     }
 
+    public var webSocketKey: String? {
+        return headers["Sec-Websocket-Key"].first
+    }
+
+    public var webSocketAccept: String? {
+        return headers["Sec-WebSocket-Accept"].first
+    }
+
+    public var isWebSocket: Bool {
+        return connection.first?.lowercased() == "upgrade" && upgrade.first?.lowercased() == "websocket"
+    }
 }
