@@ -68,7 +68,7 @@ public struct Client {
             "Connection": "Upgrade",
             "Upgrade": "websocket",
             "Sec-WebSocket-Version": "13",
-            "Sec-WebSocket-Key": [key],
+            "Sec-WebSocket-Key": key,
         ]
 
         let request = try Request(method: .get, uri: path, headers: headers) { response, stream in
@@ -85,7 +85,7 @@ public struct Client {
             try webSocket.start()
         }
 
-        try client.respond(to: request)
+        _ = try client.respond(to: request)
     }
 
     public func connectInBackground(_ path: String, failure: (ErrorProtocol) -> Void = Client.logError) {
@@ -105,18 +105,18 @@ public struct Client {
 
 public extension Response {
     public var webSocketVersion: String? {
-        return headers["Sec-Websocket-Version"].first
+        return headers["Sec-Websocket-Version"]
     }
 
     public var webSocketKey: String? {
-        return headers["Sec-Websocket-Key"].first
+        return headers["Sec-Websocket-Key"]
     }
 
     public var webSocketAccept: String? {
-        return headers["Sec-WebSocket-Accept"].first
+        return headers["Sec-WebSocket-Accept"]
     }
 
     public var isWebSocket: Bool {
-        return connection.first?.lowercased() == "upgrade" && upgrade.first?.lowercased() == "websocket"
+        return connection?.lowercased() == "upgrade" && upgrade?.lowercased() == "websocket"
     }
 }
