@@ -28,6 +28,10 @@ import WebSocketClient
 let name = "Dan"
 let client = try WebSocketClient(url: "ws://localhost:8080") { ws in
     print("Connected!")
+    ws.onText { text in
+        print("received text: \(text)")
+        try ws.send(text)
+    }
     ws.onClose { code, reason in
         print("\(code): \(reason)")
     }
